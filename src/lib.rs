@@ -19,12 +19,6 @@ use std::ptr::null_mut;
 
 use hunspell_sys as ffi;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CheckResult {
-    FoundInDictionary,
-    MissingInDictionary,
-}
-
 pub struct Hunspell {
     handle: *mut ffi::Hunhandle,
 }
@@ -117,13 +111,9 @@ impl Hunspell {
         unsafe { ffi::Hunspell_add(self.handle, cword.as_ptr()) == 0 }
     }
 
-    pub fn check(&self, word: &str) -> CheckResult {
-        let word = CString::new(word).unwrap();
-        let ret = unsafe { ffi::Hunspell_spell(self.handle, word.as_ptr()) };
-        match ret {
-            0 => CheckResult::MissingInDictionary,
-            _ => CheckResult::FoundInDictionary,
-        }
+    pub fn check(&self, word: &str) -> bool {
+        let word = self.encode_word(word);
+        unsafe { ffi::Hunspell_spell(self.handle, word.as_ptr()) != 0 }
     }
 
     pub fn suggest(&self, word: &str) -> Vec<String> {

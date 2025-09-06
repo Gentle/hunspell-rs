@@ -14,7 +14,7 @@
 //   See the License for the specific language governing permissions and
 //   limitations under the License.
 
-use crate::{CheckResult, Hunspell};
+use crate::Hunspell;
 
 #[test]
 fn create_and_destroy() {
@@ -24,27 +24,27 @@ fn create_and_destroy() {
 #[test]
 fn check() {
     let hs = Hunspell::new("tests/fixtures/reduced.aff", "tests/fixtures/reduced.dic");
-    assert_eq!(CheckResult::FoundInDictionary, hs.check("cats"));
-    assert_eq!(CheckResult::MissingInDictionary, hs.check("nocats"));
+    assert_eq!(true, hs.check("cats"));
+    assert_eq!(false, hs.check("nocats"));
 }
 
 #[test]
 fn check_with_added_word() {
     let mut hs = Hunspell::new("tests/fixtures/reduced.aff", "tests/fixtures/reduced.dic");
-    assert_eq!(CheckResult::FoundInDictionary, hs.check("cats"));
-    assert_eq!(CheckResult::MissingInDictionary, hs.check("octonasaurius"));
+    assert_eq!(true, hs.check("cats"));
+    assert_eq!(false, hs.check("octonasaurius"));
     assert!(hs.add("octonasaurius"));
-    assert_eq!(CheckResult::FoundInDictionary, hs.check("octonasaurius"));
+    assert_eq!(true, hs.check("octonasaurius"));
 }
 
 #[test]
 fn check_with_extra_dic() {
     let mut hs = Hunspell::new("tests/fixtures/reduced.aff", "tests/fixtures/reduced.dic");
-    assert_eq!(CheckResult::FoundInDictionary, hs.check("cats"));
-    assert_eq!(CheckResult::MissingInDictionary, hs.check("systemdunits"));
+    assert_eq!(true, hs.check("cats"));
+    assert_eq!(false, hs.check("systemdunits"));
     assert!(hs.add_dictionary("tests/fixtures/extra.dic"));
-    assert_eq!(CheckResult::FoundInDictionary, hs.check("cats"));
-    assert_eq!(CheckResult::FoundInDictionary, hs.check("systemdunits"));
+    assert_eq!(true, hs.check("cats"));
+    assert_eq!(true, hs.check("systemdunits"));
 }
 
 #[test]
