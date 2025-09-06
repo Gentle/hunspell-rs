@@ -17,29 +17,16 @@
 use std::ffi::{CStr, CString};
 use std::ptr::null_mut;
 
+use encoding_rs::Encoding;
 use hunspell_sys as ffi;
 
 pub struct Hunspell {
     handle: *mut ffi::Hunhandle,
-}
-
-fn to_hex_str(s: &CStr) -> String {
-    let bytes = s.to_bytes();
-    let mut acc = String::with_capacity(6 * bytes.len());
-    let mut iter = bytes.iter();
-    acc += "[";
-    if let Some(byte) = iter.next() {
-        acc += &format!("0x{:02x}", byte);
-        for byte in iter {
-            acc += &format!(", 0x{:02x}", byte);
-        }
-    }
-    acc += "]";
-    acc
+    encoding: &'static Encoding,
 }
 
 macro_rules! extract_vec {
-    ( $fname:ident, $handle:expr, $( $arg:expr ),* ) => {
+    ( $fname:ident, $handle:expr, $encoding:expr, $( $arg:expr ),* ) => {
         {
             let mut result = Vec::new();
             unsafe {
@@ -49,16 +36,8 @@ macro_rules! extract_vec {
                     for i in 0..n {
                         let item_ptr_ptr = list.offset(i);
                         if *item_ptr_ptr != null_mut() {
-                            let item = CStr::from_ptr(*item_ptr_ptr);
-                            match item.to_str() {
-                                Ok(s) => result.push(String::from(s)),
-                                Err(e) => {
-                                    let args = [$( format!("{:?}", CStr::from_ptr($arg)) ),*];
-                                    let fname = stringify!($fname);
-                                    let hex = to_hex_str(item);
-                                    log::warn!(target: "hunspell,", "Error {e:?} returned from {fname}(handle, {args:?}) when converting `CStr` to `String` str: {i}: {hex:?}");
-                                },
-                            }
+                            let item = $encoding.decode(CStr::from_ptr(*item_ptr_ptr).to_bytes()).0;
+                            result.push(String::from(item));
                         } else {
                             let args = [$( format!("{:?}", CStr::from_ptr($arg)) ),*];
                             let fname = stringify!($fname);
@@ -75,24 +54,32 @@ macro_rules! extract_vec {
 
 impl Hunspell {
     pub fn new(affpath: &str, dicpath: &str) -> Hunspell {
-        let affpath = CString::new(affpath).unwrap();
-        let dicpath = CString::new(dicpath).unwrap();
-        unsafe {
-            Hunspell {
-                handle: ffi::Hunspell_create(affpath.as_ptr(), dicpath.as_ptr()),
-            }
-        }
+        Self::new_with_optional_key(affpath, dicpath, None)
     }
 
     pub fn new_with_key(affpath: &str, dicpath: &str, key: &str) -> Hunspell {
+        Self::new_with_optional_key(affpath, dicpath, Some(key))
+    }
+
+    fn new_with_optional_key(affpath: &str, dicpath: &str, key: Option<&str>) -> Hunspell {
         let affpath = CString::new(affpath).unwrap();
         let dicpath = CString::new(dicpath).unwrap();
-        let key = CString::new(key).unwrap();
         unsafe {
-            Hunspell {
-                handle: ffi::Hunspell_create_key(affpath.as_ptr(), dicpath.as_ptr(), key.as_ptr()),
-            }
+            let handle = match key {
+                Some(key) => {
+                    let key = CString::new(key).unwrap();
+                    ffi::Hunspell_create_key(affpath.as_ptr(), dicpath.as_ptr(), key.as_ptr())
+                }
+                None => ffi::Hunspell_create(affpath.as_ptr(), dicpath.as_ptr()),
+            };
+            let cstr = CStr::from_ptr(ffi::Hunspell_get_dic_encoding(handle));
+            let encoding = Encoding::for_label(cstr.to_bytes()).unwrap();
+            Hunspell { handle, encoding }
         }
+    }
+
+    fn encode_word(&self, word: &str) -> CString {
+        CString::new(self.encoding.encode(word).0).unwrap()
     }
 
     /// Add an additional dictonary for lookup usage for i.e. `check`.
@@ -107,7 +94,7 @@ impl Hunspell {
     /// the added words are forgotten, since they were never persisted
     /// in the first place.
     pub fn add(&mut self, word: &str) -> bool {
-        let cword = CString::new(word).unwrap();
+        let cword = self.encode_word(word);
         unsafe { ffi::Hunspell_add(self.handle, cword.as_ptr()) == 0 }
     }
 
@@ -117,26 +104,27 @@ impl Hunspell {
     }
 
     pub fn suggest(&self, word: &str) -> Vec<String> {
-        let word = CString::new(word).unwrap();
-        extract_vec!(Hunspell_suggest, self.handle, word.as_ptr())
+        let word = self.encode_word(word);
+        extract_vec!(Hunspell_suggest, self.handle, self.encoding, word.as_ptr())
     }
 
     pub fn analyze(&self, word: &str) -> Vec<String> {
-        let word = CString::new(word).unwrap();
-        extract_vec!(Hunspell_analyze, self.handle, word.as_ptr())
+        let word = self.encode_word(word);
+        extract_vec!(Hunspell_analyze, self.handle, self.encoding, word.as_ptr())
     }
 
     pub fn stem(&self, word: &str) -> Vec<String> {
-        let word = CString::new(word).unwrap();
-        extract_vec!(Hunspell_stem, self.handle, word.as_ptr())
+        let word = self.encode_word(word);
+        extract_vec!(Hunspell_stem, self.handle, self.encoding, word.as_ptr())
     }
 
     pub fn generate(&self, word1: &str, word2: &str) -> Vec<String> {
-        let word1 = CString::new(word1).unwrap();
-        let word2 = CString::new(word2).unwrap();
+        let word1 = self.encode_word(word1);
+        let word2 = self.encode_word(word2);
         extract_vec!(
             Hunspell_generate,
             self.handle,
+            self.encoding,
             word1.as_ptr(),
             word2.as_ptr()
         )

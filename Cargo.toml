@@ -10,7 +10,8 @@ repository = "https://github.com/drahnr/hunspell-rs"
 edition = "2021"
 
 [dependencies]
-hunspell-sys = { version = "0.3.0", default-features = false }
+encoding_rs = "0.8.35"
+hunspell-sys = { git = "https://github.com/Gentle/hunspell-sys.git", default-features = false }
 log = "0.4.17"
 
 [features]
